@@ -1,0 +1,997 @@
+// Prisma Schema for RelayFlow - Multi-Tenant WhatsApp Business Automation SaaS Platform
+// Database: PostgreSQL with Tenant Isolation & High-Performance Indexes
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  GROWTH
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum WhatsAppAccountStatus {
+  CONNECTED
+  DISCONNECTED
+  RESTRICTED
+  PENDING_VERIFICATION
+}
+
+enum PhoneNumberQualityRating {
+  GREEN
+  YELLOW
+  RED
+  UNKNOWN
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+  INTERACTIVE
+  TEMPLATE
+  LOCATION
+  CONTACTS
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+// ----------------------------------------------------
+// Core Multi-Tenant Organizations & Users
+// ----------------------------------------------------
+
+model User {
+  id              String               @id @default(uuid())
+  email           String               @unique
+  passwordHash    String
+  name            String
+  avatarUrl       String?
+  isEmailVerified Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  memberships     OrganizationMember[]
+  assignedContacts Contact[]           @relation("AgentContacts")
+  assignedConversations Conversation[] @relation("AgentConversations")
+  auditLogs       AuditLog[]
+
+  @@index([email])
+}
+
+model Organization {
+  id                  String               @id @default(uuid())
+  name                String
+  slug                String               @unique
+  logoUrl             String?
+  tier                PlanTier             @default(STARTER)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  members             OrganizationMember[]
+  whatsAppAccounts    WhatsAppAccount[]
+  phoneNumbers        WhatsAppPhoneNumber[]
+  contacts            Contact[]
+  contactLabels       ContactLabel[]
+  conversations       Conversation[]
+  messages            Message[]
+  templates           Template[]
+  campaigns           Campaign[]
+  workflows           Workflow[]
+  aiConfigurations    AIConfiguration[]
+  apiKeys             ApiKey[]
+  webhooks            Webhook[]
+  webhookEvents       WebhookEvent[]
+  subscription        Subscription?
+  usages              Usage[]
+  auditLogs           AuditLog[]
+  integrations        Integration[]
+  notifications       Notification[]
+  workflowVariables   WorkflowVariable[]
+  metaConnections          MetaConnection[]
+  metaBusinesses           MetaBusiness[]
+  facebookPages            FacebookPage[]
+  instagramBusinessAccounts InstagramBusinessAccount[]
+  whatsAppBusinessAccounts WhatsAppBusinessAccount[]
+
+  @@index([slug])
+  @@index([createdAt])
+}
+
+model OrganizationMember {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String
+  role           Role         @default(AGENT)
+  joinedAt       DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+// ----------------------------------------------------
+// Official Meta WhatsApp Cloud API Accounts & Numbers
+// ----------------------------------------------------
+
+model WhatsAppAccount {
+  id               String                 @id @default(uuid())
+  organizationId   String
+  wabaId           String                 @unique // WhatsApp Business Account ID from Meta
+  name             String
+  currency         String                 @default("USD")
+  timezoneId       String                 @default("UTC")
+  status           WhatsAppAccountStatus  @default(CONNECTED)
+  encryptedToken   String                 // AES-256-GCM encrypted System User Access Token
+  metaAppId        String?
+  webhookVerifyToken String
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  organization     Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  phoneNumbers     WhatsAppPhoneNumber[]
+  templates        Template[]
+
+  @@index([organizationId])
+  @@index([wabaId])
+  @@index([status])
+}
+
+model WhatsAppPhoneNumber {
+  id                 String                    @id @default(uuid())
+  organizationId     String
+  whatsappAccountId  String
+  phoneNumberId      String                    @unique // Meta Phone Number ID
+  displayPhoneNumber String
+  verifiedName       String
+  qualityRating      PhoneNumberQualityRating  @default(GREEN)
+  messagingLimit     String                    @default("TIER_10K")
+  isDefault          Boolean                   @default(false)
+  status             String                    @default("CONNECTED")
+  certificateStatus  String                    @default("VALID")
+  codeVerificationStatus String               @default("VERIFIED")
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  organization       Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  whatsappAccount    WhatsAppAccount           @relation(fields: [whatsappAccountId], references: [id], onDelete: Cascade)
+  conversations      Conversation[]
+  campaigns          Campaign[]
+
+  @@index([organizationId])
+  @@index([phoneNumberId])
+  @@index([displayPhoneNumber])
+  @@index([status])
+}
+
+// ----------------------------------------------------
+// CRM: Contacts & Labels
+// ----------------------------------------------------
+
+model Contact {
+  id              String         @id @default(uuid())
+  organizationId  String
+  phone           String
+  firstName       String?
+  lastName        String?
+  email           String?
+  country         String?
+  language        String         @default("en")
+  source          String         @default("ORGANIC")
+  customFields    Json?          // Key-value store for customer CRM fields
+  assignedAgentId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedAgent   User?          @relation("AgentContacts", fields: [assignedAgentId], references: [id])
+  labels          ContactLabel[]
+  conversations   Conversation[]
+  campaignRecipients CampaignRecipient[]
+
+  @@unique([organizationId, phone])
+  @@index([organizationId])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model ContactLabel {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  colorHex       String       @default("#10b981")
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts       Contact[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// ----------------------------------------------------
+// Conversations & Messages (WhatsApp Shared Inbox)
+// ----------------------------------------------------
+
+model Conversation {
+  id                  String               @id @default(uuid())
+  organizationId      String
+  contactId           String
+  phoneNumberId       String
+  assignedAgentId     String?
+  status              String               @default("OPEN") // OPEN, PENDING, RESOLVED, CLOSED
+  lastMessageAt       DateTime             @default(now())
+  unreadCount         Int                  @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact             Contact              @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  phoneNumber         WhatsAppPhoneNumber  @relation(fields: [phoneNumberId], references: [id])
+  assignedAgent       User?                @relation("AgentConversations", fields: [assignedAgentId], references: [id])
+  messages            Message[]
+
+  @@unique([organizationId, contactId, phoneNumberId])
+  @@index([organizationId])
+  @@index([contactId])
+  @@index([phoneNumberId])
+  @@index([status])
+  @@index([lastMessageAt])
+}
+
+model Message {
+  id              String            @id @default(uuid())
+  organizationId  String
+  conversationId  String
+  wamid           String?           @unique // WhatsApp Message ID from Meta
+  direction       MessageDirection
+  type            MessageType       @default(TEXT)
+  body            String?
+  status          MessageStatus     @default(SENT)
+  sentAt          DateTime          @default(now())
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  failedReason    String?
+  rawMetadata     Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation    Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  media           MessageMedia?
+
+  @@index([organizationId])
+  @@index([conversationId])
+  @@index([wamid])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model MessageMedia {
+  id        String   @id @default(uuid())
+  messageId String   @unique
+  url       String
+  mimeType  String
+  fileName  String?
+  fileSize  Int?
+  caption   String?
+  sha256    String?
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------
+// Templates & Campaigns
+// ----------------------------------------------------
+
+model Template {
+  id                String          @id @default(uuid())
+  organizationId    String
+  whatsappAccountId String
+  metaTemplateId    String?
+  name              String
+  language          String          @default("en_US")
+  category          String          // MARKETING, UTILITY, AUTHENTICATION
+  status            String          @default("APPROVED") // PENDING, APPROVED, REJECTED, PAUSED
+  headerType        String?         // NONE, TEXT, IMAGE, VIDEO, DOCUMENT
+  headerContent     String?
+  bodyText          String
+  footerText        String?
+  buttonsJson       Json?
+  variablesCount    Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  whatsappAccount   WhatsAppAccount @relation(fields: [whatsappAccountId], references: [id], onDelete: Cascade)
+  campaigns         Campaign[]
+
+  @@unique([whatsappAccountId, name, language])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Campaign {
+  id              String              @id @default(uuid())
+  organizationId  String
+  phoneNumberId   String
+  templateId      String
+  name            String
+  status          CampaignStatus      @default(DRAFT)
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  totalCount      Int                 @default(0)
+  sentCount       Int                 @default(0)
+  deliveredCount  Int                 @default(0)
+  readCount       Int                 @default(0)
+  failedCount     Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  organization    Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  phoneNumber     WhatsAppPhoneNumber @relation(fields: [phoneNumberId], references: [id])
+  template        Template            @relation(fields: [templateId], references: [id])
+  recipients      CampaignRecipient[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([createdAt])
+}
+
+model CampaignRecipient {
+  id             String        @id @default(uuid())
+  campaignId     String
+  contactId      String
+  status         MessageStatus @default(QUEUED)
+  wamid          String?
+  variables      Json?
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  errorMessage   String?
+
+  campaign       Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact        Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId])
+  @@index([status])
+}
+
+// ----------------------------------------------------
+// Bot Flow Builder & Native Automation Engine
+// ----------------------------------------------------
+
+enum WorkflowExecutionStatus {
+  PENDING
+  RUNNING
+  WAITING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Workflow {
+  id             String              @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  triggerType    String              @default("INCOMING_MESSAGE")
+  status         WorkflowStatus      @default(ACTIVE)
+  currentVersion Int                 @default(1)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  nodes          WorkflowNode[]
+  edges          WorkflowEdge[]
+  versions       WorkflowVersion[]
+  executions     WorkflowExecution[]
+  variables      WorkflowVariable[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model WorkflowNode {
+  id             String       @id @default(uuid())
+  workflowId     String
+  organizationId String
+  nodeKey        String       // e.g. "node-1"
+  type           String       // START, MESSAGE, BUTTON, QUESTION, CONDITION, WAIT, TAG_CONTACT, ASSIGN_AGENT, AI_RESPONSE, WEBHOOK, HTTP_REQUEST, END
+  title          String
+  config         Json         // Parameters for execution (message, template, wait minutes, ai prompt, etc.)
+  positionX      Float        @default(0)
+  positionY      Float        @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  workflow       Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, nodeKey])
+  @@index([workflowId])
+  @@index([organizationId])
+}
+
+model WorkflowEdge {
+  id             String       @id @default(uuid())
+  workflowId     String
+  organizationId String
+  sourceNodeKey  String
+  targetNodeKey  String
+  sourceHandle   String?      // e.g. "branch-yes", "branch-no", "default"
+  label          String?
+
+  workflow       Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([organizationId])
+}
+
+model WorkflowVersion {
+  id          String   @id @default(uuid())
+  workflowId  String
+  version     Int
+  flowJson    Json     // Complete snapshot of nodes and edges
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, version])
+  @@index([workflowId])
+}
+
+model WorkflowExecution {
+  id              String                  @id @default(uuid())
+  workflowId      String
+  organizationId  String
+  contactId       String?
+  conversationId  String?
+  contactPhone    String
+  status          WorkflowExecutionStatus @default(PENDING)
+  currentNodeId   String?
+  delayedUntil    DateTime?               // For BullMQ delayed continuation
+  contextData     Json?                   // Runtime variables accumulated during run
+  startedAt       DateTime                @default(now())
+  completedAt     DateTime?
+  error           String?
+
+  workflow        Workflow                @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  logs            WorkflowExecutionLog[]
+
+  @@index([organizationId])
+  @@index([workflowId])
+  @@index([contactPhone])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model WorkflowExecutionLog {
+  id                  String            @id @default(uuid())
+  workflowExecutionId String
+  organizationId      String
+  nodeId              String
+  nodeType            String
+  nodeTitle           String
+  inputData           Json?
+  outputData          Json?
+  status              String            // SUCCESS, FAILED, SKIPPED, WAITING
+  durationMs          Int               @default(0)
+  errorMessage        String?
+  executedAt          DateTime          @default(now())
+
+  execution           WorkflowExecution @relation(fields: [workflowExecutionId], references: [id], onDelete: Cascade)
+
+  @@index([workflowExecutionId])
+  @@index([organizationId])
+  @@index([executedAt])
+}
+
+model WorkflowVariable {
+  id             String       @id @default(uuid())
+  workflowId     String
+  organizationId String
+  key            String
+  dataType       String       @default("STRING") // STRING, NUMBER, BOOLEAN, JSON
+  defaultValue   String?
+  description    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  workflow       Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, key])
+  @@index([workflowId])
+  @@index([organizationId])
+}
+
+// ----------------------------------------------------
+// Meta / Facebook / WhatsApp Ecosystem Architecture
+// ----------------------------------------------------
+
+model MetaConnection {
+  id                   String                    @id @default(uuid())
+  organizationId       String
+  provider             String                    @default("META")
+  status               String                    @default("CONNECTED") // CONNECTED, DISCONNECTED, EXPIRED, ERROR
+  externalUserId       String?
+  accessTokenEncrypted String
+  tokenExpiresAt       DateTime?
+  scopes               String[]                  @default(["whatsapp_business_management", "whatsapp_business_messaging", "pages_show_list", "pages_read_engagement", "instagram_basic", "instagram_manage_messages"])
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+
+  organization         Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  businesses           MetaBusiness[]
+  pages                MetaPage[]
+  instagramAccounts    InstagramAccount[]
+  whatsappAccounts     WhatsAppBusinessAccount[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model MetaBusiness {
+  id                 String         @id @default(uuid())
+  metaConnectionId   String
+  organizationId     String
+  externalBusinessId String
+  name               String
+  verificationStatus String         @default("VERIFIED") // VERIFIED, PENDING, UNVERIFIED
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  metaConnection     MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([metaConnectionId])
+  @@index([organizationId])
+}
+
+model MetaPage {
+  id                   String         @id @default(uuid())
+  metaConnectionId     String
+  organizationId       String
+  pageId               String
+  name                 String
+  category             String?
+  accessTokenEncrypted String?
+  isConnected          Boolean        @default(true)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  metaConnection       MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([metaConnectionId])
+  @@index([organizationId])
+  @@index([pageId])
+}
+
+model InstagramAccount {
+  id                String         @id @default(uuid())
+  metaConnectionId  String
+  organizationId    String
+  instagramId       String
+  username          String
+  name              String?
+  profilePictureUrl String?
+  isConnected       Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  metaConnection    MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([metaConnectionId])
+  @@index([organizationId])
+  @@index([instagramId])
+}
+
+model WhatsAppBusinessAccount {
+  id               String         @id @default(uuid())
+  metaConnectionId String
+  organizationId   String
+  wabaId           String
+  name             String
+  currency         String         @default("USD")
+  timezone         String         @default("UTC")
+  status           String         @default("CONNECTED")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  metaConnection   MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([metaConnectionId])
+  @@index([organizationId])
+  @@index([wabaId])
+}
+
+// ----------------------------------------------------
+// AI Chatbot Configuration
+// ----------------------------------------------------
+
+model AIConfiguration {
+  id               String       @id @default(uuid())
+  organizationId   String
+  name             String       @default("Default Assistant")
+  systemPrompt     String       // Persona & guardrails
+  businessContext  String       // Verified factual context
+  faqContext       Json?        // Structured Q&A
+  tone             String       @default("PROFESSIONAL")
+  language         String       @default("en")
+  modelName        String       @default("gemini-2.5-flash")
+  temperature      Float        @default(0.3)
+  fallbackToHuman  Boolean      @default(true)
+  isEnabled        Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// ----------------------------------------------------
+// Developer API, Webhooks & Integrations (n8n, WooCommerce, Sheets)
+// ----------------------------------------------------
+
+model ApiKey {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  keyHash        String       @unique
+  keyPrefix      String
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([keyHash])
+}
+
+model Webhook {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  url            String
+  secretToken    String
+  events         String[]     // messages.received, messages.delivered, campaign.completed, etc.
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isActive])
+}
+
+model WebhookEvent {
+  id                String       @id @default(uuid())
+  organizationId    String
+  provider          String       @default("META") // META, WHATSAPP, FACEBOOK, INSTAGRAM
+  eventType         String       // messages, message_status, message_template_status_update, account_update
+  externalAccountId String?      // WABA ID, Page ID, or IG ID
+  payload           Json
+  processed         Boolean      @default(true)
+  processedAt       DateTime?    @default(now())
+  error             String?
+  createdAt         DateTime     @default(now())
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([provider])
+  @@index([eventType])
+  @@index([externalAccountId])
+  @@index([processed])
+  @@index([createdAt])
+}
+
+model Integration {
+  id             String       @id @default(uuid())
+  organizationId String
+  provider       String       // N8N, GOOGLE_SHEETS, WOOCOMMERCE, ZAPIER, MAKE
+  configJson     Json
+  isConnected    Boolean      @default(false)
+  lastSyncAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+}
+
+// ----------------------------------------------------
+// Subscriptions, Plans & Razorpay Payments
+// ----------------------------------------------------
+
+model Plan {
+  id             String         @id @default(uuid())
+  tier           PlanTier       @unique
+  name           String
+  description    String
+  monthlyPrice   Int            // In cents or INR paise
+  annualPrice    Int
+  contactsLimit  Int
+  messagesLimit  Int
+  campaignsLimit Int
+  workflowsLimit Int
+  membersLimit   Int
+  numbersLimit   Int
+  subscriptions  Subscription[]
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  organizationId     String             @unique
+  planId             String
+  status             SubscriptionStatus @default(ACTIVE)
+  razorpaySubId      String?            @unique
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan               Plan               @relation(fields: [planId], references: [id])
+  payments           Payment[]
+
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Payment {
+  id             String       @id @default(uuid())
+  subscriptionId String
+  razorpayPaymentId String    @unique
+  amount         Int
+  currency       String       @default("INR")
+  status         String       @default("CAPTURED")
+  invoiceUrl     String?
+  paidAt         DateTime     @default(now())
+
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+}
+
+model Usage {
+  id             String       @id @default(uuid())
+  organizationId String
+  metric         String       // CONTACTS, MESSAGES, CAMPAIGNS, WORKFLOWS, NUMBERS
+  usedCount      Int          @default(0)
+  periodDate     String       // YYYY-MM for monthly billing quotas
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, metric, periodDate])
+  @@index([organizationId])
+  @@index([periodDate])
+}
+
+// ----------------------------------------------------
+// Security & Compliance: Audit Logs
+// ----------------------------------------------------
+
+model AuditLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String?
+  action         String       // AUTH.LOGIN, WABA.CONNECT, CAMPAIGN.START, API_KEY.CREATE
+  entity         String
+  entityId       String?
+  ipAddress      String?
+  userAgent      String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// Real-Time Notifications
+// ----------------------------------------------------
+
+model Notification {
+  id             String       @id @default(uuid())
+  organizationId String
+  title          String
+  message        String
+  type           String       @default("INFO") // INFO, SUCCESS, WARNING, ERROR, WORKFLOW
+  isRead         Boolean      @default(false)
+  link           String?
+  createdAt      DateTime     @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------
+// Official Meta Ecosystem Connections & Multi-Asset Models
+// ----------------------------------------------------
+
+model MetaConnection {
+  id               String       @id @default(uuid())
+  organizationId   String
+  externalId       String       // Meta User ID
+  status           String       @default("CONNECTED") // NOT_CONNECTED, CONNECTING, CONNECTED, FAILED, RECONNECT_REQUIRED
+  encryptedToken   String       // AES-256-GCM encrypted long-lived user/system access token
+  tokenExpiresAt   DateTime?
+  scopes           String[]     @default([])
+  businesses       MetaBusiness[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([externalId])
+  @@index([status])
+}
+
+model MetaBusiness {
+  id                 String       @id @default(uuid())
+  organizationId     String
+  metaConnectionId   String
+  externalId         String       // Meta Business Manager ID
+  name               String
+  verificationStatus String       @default("VERIFIED") // VERIFIED, PENDING, UNVERIFIED
+  status             String       @default("ACTIVE")
+  encryptedToken     String?
+  tokenExpiresAt     DateTime?
+  whatsappAccounts   WhatsAppBusinessAccount[]
+  facebookPages      FacebookPage[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metaConnection     MetaConnection @relation(fields: [metaConnectionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([externalId])
+}
+
+model WhatsAppBusinessAccount {
+  id                 String       @id @default(uuid())
+  organizationId     String
+  metaBusinessId     String?
+  externalId         String       @unique // Meta WABA ID
+  name               String
+  currency           String       @default("USD")
+  timezoneId         String       @default("UTC")
+  status             String       @default("CONNECTED") // CONNECTED, RESTRICTED, DISCONNECTED
+  encryptedToken     String       // AES-256-GCM encrypted System User Token
+  tokenExpiresAt     DateTime?
+  webhookVerifyToken String?
+  webhookVerified    Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metaBusiness       MetaBusiness? @relation(fields: [metaBusinessId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([externalId])
+  @@index([status])
+}
+
+model FacebookPage {
+  id                 String       @id @default(uuid())
+  organizationId     String
+  metaBusinessId     String?
+  externalId         String       @unique // Facebook Page ID
+  name               String
+  category           String?
+  fanCount           Int?         @default(0)
+  status             String       @default("CONNECTED")
+  encryptedToken     String?      // AES-256-GCM encrypted Page Access Token
+  tokenExpiresAt     DateTime?
+  instagramAccounts  InstagramBusinessAccount[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metaBusiness       MetaBusiness? @relation(fields: [metaBusinessId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([externalId])
+}
+
+model InstagramBusinessAccount {
+  id                 String       @id @default(uuid())
+  organizationId     String
+  facebookPageId     String?
+  externalId         String       @unique // Instagram Business Account ID
+  username           String
+  name               String?
+  followersCount     Int?         @default(0)
+  profilePictureUrl  String?
+  status             String       @default("CONNECTED")
+  encryptedToken     String?
+  tokenExpiresAt     DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  facebookPage       FacebookPage? @relation(fields: [facebookPageId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([externalId])
+}

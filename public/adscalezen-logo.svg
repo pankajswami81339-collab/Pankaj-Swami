@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" fill="none">
+  <defs>
+    <linearGradient id="azBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090f1d" />
+      <stop offset="100%" stop-color="#040711" />
+    </linearGradient>
+    <linearGradient id="azScaleCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="azZenEmerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="60%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="azBeamGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+    <linearGradient id="azTextZen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#2dd4bf" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <filter id="azGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Geometric Monogram Shield (x: 4, y: 4, w: 56, h: 56) -->
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#azBgGrad)" />
+  <rect x="4" y="4" width="56" height="56" rx="15" stroke="#10b981" stroke-width="1.2" stroke-opacity="0.3" fill="none" />
+
+  <!-- Ascending Scale Beam (A Apex) -->
+  <path d="M18 43L29 16H36L25 43H18Z" fill="url(#azScaleCyan)" />
+  
+  <!-- Zen Equilibrium Wing (Z Top Beam) -->
+  <path d="M27 16H46V22H33L27 16Z" fill="url(#azZenEmerald)" />
+
+  <!-- Zen Return Wing (Z Bottom Foundation) -->
+  <path d="M19 37H38V43H19V37Z" fill="url(#azZenEmerald)" />
+
+  <!-- Harmonic Intersecting Traverse -->
+  <path d="M42 22L28 40H35L46 26V22H42Z" fill="url(#azBeamGrad)" filter="url(#azGlow)" />
+
+  <!-- AI Automation Core Pulse -->
+  <circle cx="32" cy="29.5" r="2.8" fill="#ffffff" />
+  <circle cx="32" cy="29.5" r="5" stroke="#38bdf8" stroke-width="1.2" stroke-dasharray="2 2" fill="none" opacity="0.9" />
+
+  <!-- TYPOGRAPHY: ADSCALE ZEN -->
+  <text x="72" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Inter', sans-serif" font-size="20" font-weight="900" letter-spacing="-0.5" fill="#0f172a">ADSCALE</text>
+  <text x="178" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Inter', sans-serif" font-size="20" font-weight="900" letter-spacing="0.5" fill="url(#azTextZen)">ZEN</text>
+  
+  <!-- Active Green Beacon -->
+  <circle cx="228" cy="27" r="3.5" fill="#10b981" />
+
+  <!-- TAGLINE -->
+  <text x="72" y="48" font-family="-apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Inter', sans-serif" font-size="9" font-weight="600" letter-spacing="0.2" fill="#64748b">WhatsApp &amp; Business Automation Platform</text>
+</svg>

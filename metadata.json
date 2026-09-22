@@ -1,0 +1,8 @@
+{
+  "name": "Remix RelayFlow - WhatsApp Business Automation Platform",
+  "description": "Production-ready multi-tenant WhatsApp Business Automation SaaS platform powered by Meta WhatsApp Cloud API with AI chat, campaigns, shared inbox, and visual workflows.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

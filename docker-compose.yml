@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Multi-tenant Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: relayflow-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: relayflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Queue Management (Campaigns, Webhooks, AI Jobs)
+  redis:
+    image: redis:7-alpine
+    container_name: relayflow-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Next.js / Express Web App & API
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: relayflow-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/relayflow?schema=public
+      REDIS_URL: redis://redis:6379
+      META_APP_ID: ${META_APP_ID:-meta_app_official}
+      META_APP_SECRET: ${META_APP_SECRET:-meta_app_secret}
+      META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-relayflow_verify_token_xyz}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Background Asynchronous Worker (Campaign Queue & Webhook Ingestion)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: relayflow-worker
+    restart: always
+    command: ["node", "dist/server.cjs"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/relayflow?schema=public
+      REDIS_URL: redis://redis:6379
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
